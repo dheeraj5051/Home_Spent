@@ -8,7 +8,8 @@ on:
 jobs:
   build-apk:
     runs-on: ubuntu-latest
-
+    env:
+      HAS_KEYSTORE: ${{ secrets.KEYSTORE_BASE64 != '' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -17,7 +18,6 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: npm
 
       - name: Setup Java
         uses: actions/setup-java@v4
@@ -35,7 +35,15 @@ jobs:
           echo "EXPO_PUBLIC_APP_SCHEME=splitnest" >> .env
 
       - name: Prebuild Android project
-        run: npx expo prebuild --platform android --non-interactive
+        run: npx expo prebuild --platform android
+        env:
+          CI: "1"
+
+      - name: Bundle JS into debug build (no Metro required on device)
+        working-directory: android
+        run: |
+          sed -i '/react {/a\    debuggableVariants = []' app/build.gradle
+          grep -A2 "react {" app/build.gradle
 
       - name: Grant Gradle execute permission
         working-directory: android
@@ -52,7 +60,7 @@ jobs:
           path: android/app/build/outputs/apk/debug/app-debug.apk
 
       - name: Build release APK (requires keystore for signing)
-        if: ${{ secrets.KEYSTORE_BASE64 != '' }}
+        if: env.HAS_KEYSTORE == 'true'
         working-directory: android
         env:
           KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
@@ -68,7 +76,7 @@ jobs:
             -Pandroid.injected.signing.key.password="$KEY_PASSWORD"
 
       - name: Upload signed release APK
-        if: ${{ secrets.KEYSTORE_BASE64 != '' }}
+        if: env.HAS_KEYSTORE == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: splitnest-release-apk
